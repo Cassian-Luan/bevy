@@ -333,7 +333,8 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         impl #impl_generics #bevy_ecs_path::component::Component for #struct_name #type_generics #where_clause {
             const STORAGE_TYPE: #bevy_ecs_path::component::StorageType = #storage;
 
-            const UID: u128 = #bevy_ecs_path::invariant::const_fnv1a_hash(
+            #[cfg(debug_assertions)]
+            const UID: u128 = #bevy_ecs_path::invariant::fnv1a_hash(
                 concat!(module_path!(), "::", #struct_name_str).as_bytes()
             );
 

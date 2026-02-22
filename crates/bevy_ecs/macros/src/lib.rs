@@ -128,12 +128,83 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let struct_name = &ast.ident;
 
+    
+    // For structs with concrete field types, generate ALL_UIDS by flattening
+    // each field's ALL_UIDS into a single const array.
+    //
+    // TODO:
+    // For generic structs, for example:
+    // 
+    // #[derive(Bundle)]
+    // struct MyBundle<T: Component> {
+    //   item: T 
+    // }
+    // 
+    // we cannot do this because the array size would depend
+    // on generic type params (needs `generic_const_exprs`, not stablized). ALL_UIDS stays as
+    // the default `&[]` — compile-time constraint checking won't cover the
+    // contents of these bundles. We can only adopt runtime checks.
+    let has_type_params = generics.type_params().next().is_some();
+    let all_uids_impl = if !has_type_params && !active_field_types.is_empty() {
+        // Generate index identifiers for each field's copy loop
+        let src_idents: Vec<_> = (0..active_field_types.len())
+            .map(|i| format_ident!("_src_{}", i))
+            .collect();
+
+        // const _COUNT: usize = <F0 as Bundle>::ALL_UIDS.len() + <F1 as Bundle>::ALL_UIDS.len() + ...;
+        let count_expr = {
+            let parts: Vec<_> = active_field_types.iter().map(|ty| {
+                quote! { <#ty as #ecs_path::bundle::Bundle>::ALL_UIDS.len() }
+            }).collect();
+            quote! { #(#parts)+* }
+        };
+
+        // For each field, generate a copy loop
+        let copy_loops: Vec<_> = active_field_types.iter().zip(src_idents.iter()).map(|(ty, src)| {
+            quote! {
+                let #src = <#ty as #ecs_path::bundle::Bundle>::ALL_UIDS;
+                _j = 0;
+                while _j < #src.len() {
+                    _result[_i] = #src[_j];
+                    _i += 1;
+                    _j += 1;
+                }
+            }
+        }).collect();
+
+        quote! {
+            #[cfg(debug_assertions)]
+            const ALL_UIDS: &'static [u128] = {
+                const _COUNT: usize = #count_expr;
+                const _ARR: [u128; _COUNT] = {
+                    let mut _result = [0u128; _COUNT];
+                    let mut _i: usize = 0;
+                    let mut _j: usize;
+                    #(#copy_loops)*
+                    _result
+                };
+                &_ARR
+            };
+        }
+    } else if !has_type_params {
+        // No active fields — empty bundle
+        quote! {
+            #[cfg(debug_assertions)]
+            const ALL_UIDS: &'static [u128] = &[];
+        }
+    } else {
+        // Generic struct — can't flatten, leave as default
+        quote! {}
+    };
+
     let bundle_impl = quote! {
         // SAFETY:
         // - ComponentId is returned in field-definition-order. [get_components] uses field-definition-order
         // - `Bundle::get_components` is exactly once for each member. Rely's on the Component -> Bundle implementation to properly pass
         //   the correct `StorageType` into the callback.
         unsafe impl #impl_generics #ecs_path::bundle::Bundle for #struct_name #ty_generics #where_clause {
+            #all_uids_impl
+
             fn component_ids(
                 components: &mut #ecs_path::component::ComponentsRegistrator,
             ) -> impl Iterator<Item = #ecs_path::component::ComponentId> + use<#(#generics_ty_list,)*> {

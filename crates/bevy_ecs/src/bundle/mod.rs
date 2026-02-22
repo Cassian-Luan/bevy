@@ -203,22 +203,25 @@ use bevy_ptr::OwningPtr;
     note = "consider annotating `{Self}` with `#[derive(Component)]` or `#[derive(Bundle)]`"
 )]
 pub unsafe trait Bundle: DynamicBundle + Send + Sync + 'static {
-    /// Unique identifier for this bundle element. 
-    /// Propagated from [`Component::REQUIRE_UIDS`].
+    /// All leaf component UIDs contained in this bundle.
+    ///
+    /// For a single component, this is `&[Self::UID]`.
+    /// For `#[derive(Bundle)]` structs, this is the concatenation of all fields' `ALL_UIDS`.
+    /// For generic anonymous tuple impls, i.e. directly `(A, B, C, ...)`, this defaults to `&[]` (validation uses another path).
     #[doc(hidden)]
-    const UID: u128 = 0;
+    const ALL_UIDS: &'static [u128] = &[];
 
-    /// UIDs of components required by this bundle component's constraints.
-    /// Propagated from [`Component::REQUIRE_UIDS`].
+    /// UIDs of components required by this element's constraints.
+    /// Forwarded from [`Component::REQUIRE_UIDS`].
     #[doc(hidden)]
     const REQUIRE_UIDS: &'static [u128] = &[];
 
-    /// UIDs of components forbidden by this bundle element's schema constraints.
-    /// Propagated from [`Component::FORBID_UIDS`].
+    /// UIDs of components forbidden by this element's constraints.
+    /// Forwarded from [`Component::FORBID_UIDS`].
     #[doc(hidden)]
     const FORBID_UIDS: &'static [u128] = &[];
 
-    /// Component constraint validation.
+    /// Compile-time constraint validation.
     ///
     /// For tuple bundles, this const evaluates require/forbid checks against
     /// all component UIDs in the tuple. A constraint violation causes a

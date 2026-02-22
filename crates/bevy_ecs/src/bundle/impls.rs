@@ -14,8 +14,11 @@ use crate::{
 // - `Bundle::component_ids` calls `ids` for C's component id (and nothing else)
 // - `Bundle::get_components` is called exactly once for C and passes the component's storage type based on its associated constant.
 unsafe impl<C: Component> Bundle for C {
-    const SCHEMA_UID: u128 = C::UID;
+    #[cfg(debug_assertions)]
+    const ALL_UIDS: &'static [u128] = &[C::UID];
+    #[cfg(debug_assertions)]
     const REQUIRE_UIDS: &'static [u128] = C::REQUIRE_UIDS;
+    #[cfg(debug_assertions)]
     const FORBID_UIDS: &'static [u128] = C::FORBID_UIDS;
 
     fn component_ids(
@@ -77,11 +80,29 @@ macro_rules! tuple_impl {
         // - `Bundle::get_components` is called exactly once for each member. Relies on the above implementation to pass the correct
         //   `StorageType` into the callback.
         unsafe impl<$($name: Bundle),*> Bundle for ($($name,)*) {
-            const SCHEMA_VALIDATED: () = {
-                let uids: &[u128] = &[$(<$name as Bundle>::SCHEMA_UID),*];
+            #[cfg(debug_assertions)]
+            const VALIDATED: () = {
+                // TODO:
+                // This is a heck in stable rust because nested `const` items can't use generics(not stablized).
+                // We use `let` bindings to reference generic params' ALL_UIDS then verify bundle by bundle.
                 $(
-                    crate::invariant::const_check_require(<$name as Bundle>::REQUIRE_UIDS, uids);
-                    crate::invariant::const_check_forbid(<$name as Bundle>::FORBID_UIDS, uids);
+                    let $alias = <$name as Bundle>::ALL_UIDS;
+                )*
+
+                // Collect all UID lists into one slice-of-slices (at the outer
+                // repetition level, so all aliases are visible).
+                let _all_lists: &[&[u128]] = &[$($alias),*];
+
+                // For each element, check its REQUIRE/FORBID against the combined lists.
+                $(
+                    crate::invariant::check_require_in_lists(
+                        <$name as Bundle>::REQUIRE_UIDS,
+                        _all_lists,
+                    );
+                    crate::invariant::check_forbid_in_lists(
+                        <$name as Bundle>::FORBID_UIDS,
+                        _all_lists,
+                    );
                 )*
             };
 

@@ -5,7 +5,6 @@ use core::any::Any;
 use core::{any::TypeId, fmt::Debug, ops::Deref};
 
 use crate::component::{enforce_no_required_components_recursion, RequiredComponentsRegistrator};
-use crate::invariant::ComponentConstraints;
 use crate::lifecycle::ComponentHooks;
 use crate::{
     component::{
@@ -168,7 +167,6 @@ impl<'w> ComponentsRegistrator<'w> {
             ComponentDescriptor::new::<T>,
             T::register_required_components,
             ComponentHooks::update_from_component::<T>,
-            T::register_schema_constraints,
         )
     }
 
@@ -179,7 +177,6 @@ impl<'w> ComponentsRegistrator<'w> {
         descriptor: fn() -> ComponentDescriptor,
         register_required_components: fn(ComponentId, &mut RequiredComponentsRegistrator),
         update_from_component: fn(&mut ComponentHooks) -> &mut ComponentHooks,
-        register_schema_constraints: fn(&mut ComponentsRegistrator) -> Option<ComponentConstraints>,
     ) -> ComponentId {
         if let Some(&id) = self.indices.get(&type_id) {
             enforce_no_required_components_recursion(self, &self.recursion_check_stack, id);
@@ -208,7 +205,6 @@ impl<'w> ComponentsRegistrator<'w> {
                 descriptor(),
                 register_required_components,
                 update_from_component,
-                register_schema_constraints,
             );
         }
         id
@@ -225,7 +221,6 @@ impl<'w> ComponentsRegistrator<'w> {
         descriptor: ComponentDescriptor,
         register_required_components: fn(ComponentId, &mut RequiredComponentsRegistrator),
         update_from_component: fn(&mut ComponentHooks) -> &mut ComponentHooks,
-        register_schema_constraints: fn(&mut ComponentsRegistrator) -> Option<ComponentConstraints>,
     ) {
         // SAFETY: ensured by caller.
         unsafe {
@@ -250,9 +245,6 @@ impl<'w> ComponentsRegistrator<'w> {
         }
         self.recursion_check_stack.pop();
 
-        // Register schema constraints (this may register additional components for Require/Forbid types)
-        let schema_constraints = register_schema_constraints(self);
-
         // SAFETY: we just inserted it in `register_component_inner`
         let info = unsafe {
             &mut self
@@ -266,11 +258,7 @@ impl<'w> ComponentsRegistrator<'w> {
 
         update_from_component(&mut info.hooks);
 
-        info.constraints.require_or_default = required_components;
-        if let Some(sc) = schema_constraints {
-            info.constraints.require = sc.require;
-            info.constraints.forbid = sc.forbid;
-        }
+        info.required_components = required_components;
     }
 
     /// Registers a component described by `descriptor`.
@@ -548,7 +536,6 @@ impl<'w> ComponentsQueuedRegistrator<'w> {
                                 descriptor,
                                 T::register_required_components,
                                 ComponentHooks::update_from_component::<T>,
-                                T::register_schema_constraints,
                             );
                         }
                     },
