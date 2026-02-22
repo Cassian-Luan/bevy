@@ -1,0 +1,18 @@
+error[E0080]: evaluation panicked: Constraint violation: a forbidden component is present in the bundle
+  --> tests/ui/invariant/constraint_forbid_violation.rs:11:10
+   |
+11 | #[derive(Bundle)]
+   |          ^^^^^^ evaluation of `_` failed inside this call
+   |
+note: inside `check_forbid`
+  --> $BEVY_ROOT/bevy_ecs/src/invariant/validate.rs:63:13
+   |
+63 | /             assert!(
+64 | |                 bundle_uids[j] != forbid,
+65 | |                 "Constraint violation: a forbidden component is present in the bundle"
+66 | |             );
+   | |_____________^ the failure occurred here
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0080`.

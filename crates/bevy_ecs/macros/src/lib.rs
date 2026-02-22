@@ -267,10 +267,42 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
             }
         }
     });
+
+    // TODO: need design: 
+    // The current approach is to verify the Bundle immediately, which is obviously very slow. 
+    // Conversely, we would need to perform const assert from any possible calling point, 
+    // which might be a bit faster.
+    // In the longer term, 
+    // it is simply impossible for us to evaluate during the blank impl of anonymous tuples, i.e. (A, B, C). 
+    // Therefore, the implementation here is problematic and is just for verifying the idea.
+    let constraint_validation = if !has_type_params && !active_field_types.is_empty() {
+        let checks: Vec<_> = active_field_types.iter().map(|ty| {
+            quote! {
+                #ecs_path::invariant::check_require(
+                    <#ty as #ecs_path::bundle::Bundle>::REQUIRE_UIDS,
+                    <#struct_name as #ecs_path::bundle::Bundle>::ALL_UIDS,
+                );
+                #ecs_path::invariant::check_forbid(
+                    <#ty as #ecs_path::bundle::Bundle>::FORBID_UIDS,
+                    <#struct_name as #ecs_path::bundle::Bundle>::ALL_UIDS,
+                );
+            }
+        }).collect();
+        quote! {
+            #[cfg(debug_assertions)]
+            const _: () = {
+                #(#checks)*
+            };
+        }
+    } else {
+        quote! {}
+    };
+
     TokenStream::from(quote! {
         #bundle_impl
         #from_components_impl
         #dynamic_bundle_impl
+        #constraint_validation
     })
 }
 
@@ -735,7 +767,7 @@ pub fn derive_resource(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_derive(
     Component,
-    attributes(component, require, relationship, relationship_target, entities)
+    attributes(component, require, relationship, relationship_target, entities, constraint)
 )]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     component::derive_component(input)

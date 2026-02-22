@@ -328,6 +328,31 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     // level components are initialized first, giving them precedence over recursively defined constructors for the same component type
     let struct_name_str = struct_name.to_string();
 
+    // If the component property is marked with #[constraint(require(...), forbid(...))], override the default
+    let constraint_require_uids = if !attrs.constraint_requires.is_empty() {
+        let paths = &attrs.constraint_requires;
+        quote! {
+            #[cfg(debug_assertions)]
+            const REQUIRE_UIDS: &'static [u128] = &[
+                #(<#paths as #bevy_ecs_path::component::Component>::UID),*
+            ];
+        }
+    } else {
+        quote! {}
+    };
+
+    let constraint_forbid_uids = if !attrs.constraint_forbids.is_empty() {
+        let paths = &attrs.constraint_forbids;
+        quote! {
+            #[cfg(debug_assertions)]
+            const FORBID_UIDS: &'static [u128] = &[
+                #(<#paths as #bevy_ecs_path::component::Component>::UID),*
+            ];
+        }
+    } else {
+        quote! {}
+    };
+
     TokenStream::from(quote! {
         #required_component_docs
         impl #impl_generics #bevy_ecs_path::component::Component for #struct_name #type_generics #where_clause {
@@ -337,6 +362,9 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             const UID: u128 = #bevy_ecs_path::invariant::fnv1a_hash(
                 concat!(module_path!(), "::", #struct_name_str).as_bytes()
             );
+
+            #constraint_require_uids
+            #constraint_forbid_uids
 
             type Mutability = #mutable_type;
             fn register_required_components(
@@ -601,7 +629,11 @@ struct Attrs {
     immutable: bool,
     clone_behavior: Option<Expr>,
     map_entities: Option<MapEntitiesAttributeKind>,
+    constraint_requires: Vec<Path>,
+    constraint_forbids: Vec<Path>,
 }
+
+pub const CONSTRAINT: &str = "constraint";
 
 #[derive(Clone, Copy)]
 enum StorageTy {
@@ -642,6 +674,8 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
         immutable: false,
         clone_behavior: None,
         map_entities: None,
+        constraint_requires: Vec::new(),
+        constraint_forbids: Vec::new(),
     };
 
     let mut require_paths = HashSet::new();
@@ -719,6 +753,24 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
         } else if attr.path().is_ident(RELATIONSHIP_TARGET) {
             let relationship_target = attr.parse_args::<RelationshipTarget>()?;
             attrs.relationship_target = Some(relationship_target);
+        } else if attr.path().is_ident(CONSTRAINT) {
+            attr.parse_nested_meta(|nested| {
+                if nested.path.is_ident("require") {
+                    let content;
+                    parenthesized!(content in nested.input);
+                    let paths = Punctuated::<Path, Comma>::parse_terminated(&content)?;
+                    attrs.constraint_requires.extend(paths);
+                    Ok(())
+                } else if nested.path.is_ident("forbid") {
+                    let content;
+                    parenthesized!(content in nested.input);
+                    let paths = Punctuated::<Path, Comma>::parse_terminated(&content)?;
+                    attrs.constraint_forbids.extend(paths);
+                    Ok(())
+                } else {
+                    Err(nested.error("Expected `require(...)` or `forbid(...)`"))
+                }
+            })?;
         }
     }
 
