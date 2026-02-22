@@ -14,6 +14,10 @@ use crate::{
 // - `Bundle::component_ids` calls `ids` for C's component id (and nothing else)
 // - `Bundle::get_components` is called exactly once for C and passes the component's storage type based on its associated constant.
 unsafe impl<C: Component> Bundle for C {
+    const SCHEMA_UID: u128 = C::UID;
+    const REQUIRE_UIDS: &'static [u128] = C::REQUIRE_UIDS;
+    const FORBID_UIDS: &'static [u128] = C::FORBID_UIDS;
+
     fn component_ids(
         components: &mut ComponentsRegistrator,
     ) -> impl Iterator<Item = ComponentId> + use<C> {
@@ -73,6 +77,14 @@ macro_rules! tuple_impl {
         // - `Bundle::get_components` is called exactly once for each member. Relies on the above implementation to pass the correct
         //   `StorageType` into the callback.
         unsafe impl<$($name: Bundle),*> Bundle for ($($name,)*) {
+            const SCHEMA_VALIDATED: () = {
+                let uids: &[u128] = &[$(<$name as Bundle>::SCHEMA_UID),*];
+                $(
+                    crate::invariant::const_check_require(<$name as Bundle>::REQUIRE_UIDS, uids);
+                    crate::invariant::const_check_forbid(<$name as Bundle>::FORBID_UIDS, uids);
+                )*
+            };
+
             fn component_ids<'a>(components: &'a mut ComponentsRegistrator) -> impl Iterator<Item = ComponentId> + use<$($name,)*> {
                 iter::empty()$(.chain(<$name as Bundle>::component_ids(components)))*
             }

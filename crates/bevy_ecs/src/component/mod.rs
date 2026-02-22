@@ -512,6 +512,21 @@ pub trait Component: Send + Sync + 'static {
     /// A constant indicating the storage type used for this component.
     const STORAGE_TYPE: StorageType;
 
+    /// Unique identifier for this component type.
+    ///
+    /// Usually generated from `const_fnv1a_hash(concat!(module_path!(), "::", type_name))`.
+    const UID: u128 = 0;
+
+    /// CIDs of components required by this component's constraints.
+    ///
+    /// Override via `#[component(schema(require(A, B)))]` on the derive.
+    const REQUIRE_UIDS: &'static [u128] = &[];
+
+    /// UIDs of components forbidden by this component's constraints.
+    ///
+    /// Override via `#[component(schema(forbid(A, B)))]` on the derive.
+    const FORBID_UIDS: &'static [u128] = &[];
+
     /// A marker type to assist Bevy with determining if this component is
     /// mutable, or immutable. Mutable components will have [`Component<Mutability = Mutable>`],
     /// while immutable components will instead have [`Component<Mutability = Immutable>`].
@@ -554,6 +569,18 @@ pub trait Component: Send + Sync + 'static {
         _component_id: ComponentId,
         _required_components: &mut RequiredComponentsRegistrator,
     ) {
+    }
+
+    /// Registers schema constraints for this component.
+    ///
+    /// Override this method (typically via `impl Schema`) to register
+    /// archetype invariants that are validated when archetypes are created.
+    ///
+    /// Returns `None` by default (no schema constraints).
+    fn register_schema_constraints(
+        _registrator: &mut ComponentsRegistrator,
+    ) -> Option<crate::invariant::ComponentConstraints> {
+        None
     }
 
     /// Called when registering this component, allowing to override clone function (or disable cloning altogether) for this component.

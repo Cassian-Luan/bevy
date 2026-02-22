@@ -326,10 +326,17 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 
     // This puts `register_required` before `register_recursive_requires` to ensure that the constructors of _all_ top
     // level components are initialized first, giving them precedence over recursively defined constructors for the same component type
+    let struct_name_str = struct_name.to_string();
+
     TokenStream::from(quote! {
         #required_component_docs
         impl #impl_generics #bevy_ecs_path::component::Component for #struct_name #type_generics #where_clause {
             const STORAGE_TYPE: #bevy_ecs_path::component::StorageType = #storage;
+
+            const UID: u128 = #bevy_ecs_path::invariant::const_fnv1a_hash(
+                concat!(module_path!(), "::", #struct_name_str).as_bytes()
+            );
+
             type Mutability = #mutable_type;
             fn register_required_components(
                 _requiree: #bevy_ecs_path::component::ComponentId,

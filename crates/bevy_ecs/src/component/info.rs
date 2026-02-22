@@ -18,6 +18,7 @@ use crate::{
         Component, ComponentCloneBehavior, ComponentMutability, QueuedComponents,
         RequiredComponents, StorageType,
     },
+    invariant::ComponentConstraints,
     lifecycle::ComponentHooks,
     query::DebugCheckedUnwrap as _,
     relationship::RelationshipAccessor,
@@ -31,10 +32,8 @@ pub struct ComponentInfo {
     pub(super) id: ComponentId,
     pub(super) descriptor: ComponentDescriptor,
     pub(super) hooks: ComponentHooks,
-    pub(super) required_components: RequiredComponents,
-    /// The set of components that require this components.
-    /// Invariant: components in this set always appear after the components that they require.
-    pub(super) required_by: IndexSet<ComponentId, FixedHasher>,
+    /// Unified constraints: require, `require_or_default` (#[require]), forbid `required_by`by.
+    pub(super) constraints: ComponentConstraints,
 }
 
 impl ComponentInfo {
@@ -106,8 +105,7 @@ impl ComponentInfo {
             id,
             descriptor,
             hooks: Default::default(),
-            required_components: Default::default(),
-            required_by: Default::default(),
+            constraints: Default::default(),
         }
     }
 
@@ -139,12 +137,17 @@ impl ComponentInfo {
     /// Retrieves the [`RequiredComponents`] collection, which contains all required components (and their constructors)
     /// needed by this component. This includes _recursive_ required components.
     pub fn required_components(&self) -> &RequiredComponents {
-        &self.required_components
+        self.constraints.require_or_default()
     }
 
     /// Returns [`RelationshipAccessor`] for this component if it is a [`Relationship`](crate::relationship::Relationship) or [`RelationshipTarget`](crate::relationship::RelationshipTarget) , `None` otherwise.
     pub fn relationship_accessor(&self) -> Option<&RelationshipAccessor> {
         self.descriptor.relationship_accessor.as_ref()
+    }
+
+    /// Returns the unified [`SchemaConstraints`] for this component.
+    pub fn constraints(&self) -> &ComponentConstraints {
+        &self.constraints
     }
 }
 
@@ -511,7 +514,7 @@ impl Components {
     pub(crate) fn get_required_components(&self, id: ComponentId) -> Option<&RequiredComponents> {
         self.components
             .get(id.0)
-            .and_then(|info| info.as_ref().map(|info| &info.required_components))
+            .and_then(|info| info.as_ref().map(|info| info.constraints.require_or_default()))
     }
 
     #[inline]
@@ -521,7 +524,21 @@ impl Components {
     ) -> Option<&mut RequiredComponents> {
         self.components
             .get_mut(id.0)
-            .and_then(|info| info.as_mut().map(|info| &mut info.required_components))
+            .and_then(|info| info.as_mut().map(|info| info.constraints.require_or_default_mut()))
+    }
+
+    #[inline]
+    pub(crate) fn get_constraints(&self, id: ComponentId) -> Option<&ComponentConstraints> {
+        self.components
+            .get(id.0)
+            .and_then(|info| info.as_ref().map(|info| &info.constraints))
+    }
+
+    #[inline]
+    pub(crate) fn get_constraints_mut(&mut self, id: ComponentId) -> Option<&mut ComponentConstraints> {
+        self.components
+            .get_mut(id.0)
+            .and_then(|info| info.as_mut().map(|info| &mut info.constraints))
     }
 
     #[inline]
@@ -529,9 +546,7 @@ impl Components {
         &self,
         id: ComponentId,
     ) -> Option<&IndexSet<ComponentId, FixedHasher>> {
-        self.components
-            .get(id.0)
-            .and_then(|info| info.as_ref().map(|info| &info.required_by))
+        self.get_constraints(id).map(ComponentConstraints::required_by)
     }
 
     #[inline]
@@ -539,9 +554,7 @@ impl Components {
         &mut self,
         id: ComponentId,
     ) -> Option<&mut IndexSet<ComponentId, FixedHasher>> {
-        self.components
-            .get_mut(id.0)
-            .and_then(|info| info.as_mut().map(|info| &mut info.required_by))
+        self.get_constraints_mut(id).map(ComponentConstraints::required_by_mut)
     }
 
     /// Returns true if the [`ComponentId`] is fully registered and valid.

@@ -203,6 +203,31 @@ use bevy_ptr::OwningPtr;
     note = "consider annotating `{Self}` with `#[derive(Component)]` or `#[derive(Bundle)]`"
 )]
 pub unsafe trait Bundle: DynamicBundle + Send + Sync + 'static {
+    /// Unique identifier for this bundle element. 
+    /// Propagated from [`Component::REQUIRE_UIDS`].
+    #[doc(hidden)]
+    const UID: u128 = 0;
+
+    /// UIDs of components required by this bundle component's constraints.
+    /// Propagated from [`Component::REQUIRE_UIDS`].
+    #[doc(hidden)]
+    const REQUIRE_UIDS: &'static [u128] = &[];
+
+    /// UIDs of components forbidden by this bundle element's schema constraints.
+    /// Propagated from [`Component::FORBID_UIDS`].
+    #[doc(hidden)]
+    const FORBID_UIDS: &'static [u128] = &[];
+
+    /// Component constraint validation.
+    ///
+    /// For tuple bundles, this const evaluates require/forbid checks against
+    /// all component UIDs in the tuple. A constraint violation causes a
+    /// compile error.
+    ///
+    /// Defaults to `()` (no validation) for single components and derived bundles.
+    #[doc(hidden)]
+    const VALIDATED: () = ();
+
     /// Gets this [`Bundle`]'s component ids, in the order of this bundle's [`Component`]s
     /// This will register the component if it doesn't exist.
     #[doc(hidden)]

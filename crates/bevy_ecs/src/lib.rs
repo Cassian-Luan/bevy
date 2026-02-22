@@ -36,6 +36,7 @@ pub mod error;
 pub mod event;
 pub mod hierarchy;
 pub mod intern;
+pub mod invariant;
 pub mod label;
 pub mod lifecycle;
 pub mod message;

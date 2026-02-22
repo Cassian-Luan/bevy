@@ -903,6 +903,23 @@ impl Archetypes {
             table_components: table_components.into_boxed_slice(),
         };
 
+        // Validate schema constraints before creating a new archetype.
+        {
+            let all_components: Vec<ComponentId> = archetype_identity
+                .table_components
+                .iter()
+                .chain(archetype_identity.sparse_set_components.iter())
+                .copied()
+                .collect();
+
+            for &component_id in &all_components {
+                // SAFETY: component_id exists in components (ensured by caller)
+                let constraints = unsafe { components.get_info_unchecked(component_id) }.constraints();
+                // SAFETY: all component IDs are valid (ensured by caller)
+                unsafe { constraints.validate(&all_components, component_id, components) };
+            }
+        }
+
         let archetypes = &mut self.archetypes;
         let component_index = &mut self.by_component;
         match self.by_components.entry(archetype_identity) {
